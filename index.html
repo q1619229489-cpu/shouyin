@@ -372,8 +372,39 @@
       return frame;
     }
 
+    function drawFingerSilhouette(context, points, path, widths, fillStyle) {
+      context.save();
+      context.lineCap = "round";
+      context.lineJoin = "round";
+      context.strokeStyle = fillStyle;
+      context.fillStyle = fillStyle;
+
+      for (let i = 0; i < path.length - 1; i += 1) {
+        const from = points[path[i]];
+        const to = points[path[i + 1]];
+        context.lineWidth = widths[i];
+        context.beginPath();
+        context.moveTo(from.x, from.y);
+        context.lineTo(to.x, to.y);
+        context.stroke();
+      }
+
+      for (let i = 1; i < path.length; i += 1) {
+        const p = points[path[i]];
+        const radius = widths[Math.max(0, i - 1)] * 0.5;
+        context.beginPath();
+        context.arc(p.x, p.y, radius, 0, Math.PI * 2);
+        context.fill();
+      }
+      context.restore();
+    }
+
     function drawFleshyHand(context, points, lineWidth, fillStyle) {
       if (!points || points.length < 21) return;
+      const palmWidth = Math.max(lineWidth * 1.08, distance(points[0], points[9]) * 0.22);
+      const fingerBase = lineWidth * 0.96;
+      const fingerTip = lineWidth * 0.58;
+
       context.save();
       context.lineCap = "round";
       context.lineJoin = "round";
@@ -381,31 +412,34 @@
       context.fillStyle = fillStyle;
 
       context.beginPath();
-      const first = points[PALM_PATH[0]];
-      context.moveTo(first.x, first.y);
-      for (let i = 1; i < PALM_PATH.length; i += 1) {
-        const p = points[PALM_PATH[i]];
-        context.lineTo(p.x, p.y);
-      }
+      context.moveTo(points[0].x, points[0].y);
+      context.quadraticCurveTo(points[1].x, points[1].y, points[5].x, points[5].y);
+      context.quadraticCurveTo(points[9].x, points[9].y, points[13].x, points[13].y);
+      context.quadraticCurveTo(points[17].x, points[17].y, points[0].x, points[0].y);
       context.closePath();
       context.fill();
 
-      context.lineWidth = lineWidth;
-      for (const path of FINGER_PATHS) {
+      for (const index of [0, 1, 5, 9, 13, 17]) {
+        const p = points[index];
         context.beginPath();
-        context.moveTo(points[path[0]].x, points[path[0]].y);
-        for (let i = 1; i < path.length; i += 1) {
-          const p = points[path[i]];
-          context.lineTo(p.x, p.y);
-        }
-        context.stroke();
+        context.arc(p.x, p.y, palmWidth * 0.54, 0, Math.PI * 2);
+        context.fill();
       }
 
-      const radius = lineWidth * 0.52;
-      for (const p of points) {
-        context.beginPath();
-        context.arc(p.x, p.y, radius, 0, Math.PI * 2);
-        context.fill();
+      drawFingerSilhouette(context, points, FINGER_PATHS[0], [
+        lineWidth * 1.02,
+        lineWidth * 0.88,
+        lineWidth * 0.76,
+        fingerTip
+      ], fillStyle);
+
+      for (let i = 1; i < FINGER_PATHS.length; i += 1) {
+        drawFingerSilhouette(context, points, FINGER_PATHS[i], [
+          fingerBase,
+          lineWidth * 0.84,
+          lineWidth * 0.7,
+          fingerTip
+        ], fillStyle);
       }
       context.restore();
     }
@@ -424,7 +458,7 @@
         live = false
       } = options;
       const radius = Math.max(scale * 0.7, 40);
-      const lineWidth = Math.max(28, Math.min(35, scale * 0.1));
+      const lineWidth = Math.max(24, Math.min(33, scale * 0.092));
       const ink = inkStyles[inkStyleIndex];
 
       context.save();
@@ -467,8 +501,8 @@
         y: last.center.y,
         vx: Math.cos(theta) * speed + (Math.random() - 0.5) * 2,
         vy: Math.sin(theta) * speed + (Math.random() - 0.5) * 2,
-        angle: (Math.random() - 0.5) * 0.7,
-        angularVelocity: (Math.random() - 0.5) * 0.055,
+        angle: 0,
+        angularVelocity: 0,
         mass: radius * radius,
         radius,
         restitution: 0.82 + Math.random() * 0.12,
@@ -529,30 +563,25 @@
       for (const p of particles) {
         p.x += p.vx * dt;
         p.y += p.vy * dt;
-        p.angle += p.angularVelocity * dt;
         p.frameIndex = (p.frameIndex + 0.32 * dt) % p.frames.length;
 
         if (p.x - p.radius < 0) {
           p.x = p.radius;
           p.vx = Math.abs(p.vx) * p.restitution;
-          p.angularVelocity += p.vy * 0.003;
           playCollisionSound(p.radius);
         } else if (p.x + p.radius > width) {
           p.x = width - p.radius;
           p.vx = -Math.abs(p.vx) * p.restitution;
-          p.angularVelocity += p.vy * 0.003;
           playCollisionSound(p.radius);
         }
 
         if (p.y - p.radius < 0) {
           p.y = p.radius;
           p.vy = Math.abs(p.vy) * p.restitution;
-          p.angularVelocity -= p.vx * 0.003;
           playCollisionSound(p.radius);
         } else if (p.y + p.radius > height) {
           p.y = height - p.radius;
           p.vy = -Math.abs(p.vy) * p.restitution;
-          p.angularVelocity -= p.vx * 0.003;
           playCollisionSound(p.radius);
         }
       }
@@ -593,8 +622,6 @@
       a.vy = ty * dpTanA + ny * mA * bounce;
       b.vx = tx * dpTanB + nx * mB * bounce;
       b.vy = ty * dpTanB + ny * mB * bounce;
-      a.angularVelocity += (dpTanB - dpTanA) * 0.006;
-      b.angularVelocity += (dpTanA - dpTanB) * 0.006;
       playCollisionSound((a.radius + b.radius) * 0.5);
     }
 
