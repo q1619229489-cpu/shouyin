@@ -220,7 +220,7 @@
   <div id="hint" class="hint">允许摄像头后，用双手摆出手影；张嘴开始录制，再次张嘴或 3 秒后释放。</div>
 
   <div class="panel" aria-label="控制面板">
-    <button id="styleBtn" class="icon-button" title="切换影子风格" aria-label="切换影子风格">
+    <button id="styleBtn" class="icon-button" title="切换黑墨质感" aria-label="切换黑墨质感">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
         <path d="M12 22a7 7 0 0 0 7-7c0-5-7-13-7-13S5 10 5 15a7 7 0 0 0 7 7Z"></path>
         <path d="M12 22a7 7 0 0 0 0-20"></path>
@@ -276,7 +276,11 @@
     const MAR_CLOSED = 0.2;
     const MAX_RECORDING_MS = 3000;
     const MAX_RECORDING_FRAMES = 180;
-    const styles = ["ink", "ember", "aurora"];
+    const inkStyles = [
+      { name: "softInk", core: 0.86, edge: 0.18, blur: 14, halo: 0.1 },
+      { name: "deepInk", core: 0.94, edge: 0.22, blur: 10, halo: 0.08 },
+      { name: "charcoal", core: 0.9, edge: 0.14, blur: 6, halo: 0.06 }
+    ];
 
     let width = 0;
     let height = 0;
@@ -288,7 +292,7 @@
     let mouthLocked = false;
     let recordingStartedAt = 0;
     let recordingFrames = [];
-    let styleIndex = 0;
+    let inkStyleIndex = 0;
     let shadowScale = 1;
     let audioCtx = null;
     let lastTimestamp = performance.now();
@@ -406,22 +410,8 @@
       context.restore();
     }
 
-    function styleFill(context, style, radius, alpha = 1) {
-      if (style === "ink") {
-        return `rgba(0, 0, 0, ${0.86 * alpha})`;
-      }
-      if (style === "ember") {
-        const gradient = context.createRadialGradient(0, 0, radius * 0.15, 0, 0, radius);
-        gradient.addColorStop(0, `rgba(255, 126, 70, ${0.88 * alpha})`);
-        gradient.addColorStop(0.54, `rgba(70, 0, 12, ${0.84 * alpha})`);
-        gradient.addColorStop(1, `rgba(0, 0, 0, ${0.9 * alpha})`);
-        return gradient;
-      }
-      const gradient = context.createLinearGradient(-radius, -radius, radius, radius);
-      gradient.addColorStop(0, `rgba(0, 255, 214, ${0.78 * alpha})`);
-      gradient.addColorStop(0.5, `rgba(90, 35, 255, ${0.82 * alpha})`);
-      gradient.addColorStop(1, `rgba(255, 35, 126, ${0.76 * alpha})`);
-      return gradient;
+    function inkFill(alpha = 1, density = 1) {
+      return `rgba(0, 0, 0, ${Math.min(alpha * density, 0.96)})`;
     }
 
     function drawFrame(context, frame, options = {}) {
@@ -430,25 +420,36 @@
         y = frame.center.y,
         scale = frame.scale || frame.span,
         angle = 0,
-        style = styles[styleIndex],
         alpha = 1,
         live = false
       } = options;
       const radius = Math.max(scale * 0.7, 40);
       const lineWidth = Math.max(28, Math.min(35, scale * 0.1));
+      const ink = inkStyles[inkStyleIndex];
 
       context.save();
       context.translate(x, y);
       context.rotate(angle);
-      context.shadowColor = style === "ink" ? `rgba(0, 0, 0, ${0.65 * alpha})` : `rgba(255, 120, 180, ${0.42 * alpha})`;
-      context.shadowBlur = live ? 12 : 22;
-      context.globalCompositeOperation = style === "ink" ? "source-over" : "lighter";
-      const fill = styleFill(context, style, radius, alpha);
+      context.globalCompositeOperation = "source-over";
 
+      context.save();
+      context.shadowColor = inkFill(alpha, ink.edge);
+      context.shadowBlur = ink.blur + (live ? 0 : 5);
+      context.globalAlpha = Math.min(alpha * 0.86, 1);
       for (const hand of frame.hands) {
         const points = hand.map(p => ({ x: p.x * scale, y: p.y * scale }));
-        drawFleshyHand(context, points, lineWidth, fill);
+        drawFleshyHand(context, points, lineWidth + 4, inkFill(alpha, ink.edge));
       }
+      context.restore();
+
+      context.save();
+      context.shadowColor = inkFill(alpha, ink.halo);
+      context.shadowBlur = live ? ink.blur * 0.5 : ink.blur;
+      for (const hand of frame.hands) {
+        const points = hand.map(p => ({ x: p.x * scale, y: p.y * scale }));
+        drawFleshyHand(context, points, lineWidth, inkFill(alpha, ink.core));
+      }
+      context.restore();
       context.restore();
     }
 
@@ -472,7 +473,6 @@
         radius,
         restitution: 0.82 + Math.random() * 0.12,
         scale: last.span * shadowScale,
-        style: styles[styleIndex],
         born: performance.now()
       });
       playReleaseSound(radius);
@@ -612,16 +612,14 @@
           y: p.y,
           scale: p.scale,
           angle: p.angle,
-          style: p.style,
-          alpha: 0.88
+          alpha: 0.92
         });
       }
 
       const liveFrame = makeLiveFrame(currentHands);
       if (liveFrame) {
         drawFrame(ctx, liveFrame, {
-          style: recording ? styles[styleIndex] : "ink",
-          alpha: recording ? 0.54 : 0.24,
+          alpha: recording ? 0.88 : 0.72,
           live: true
         });
       }
@@ -728,8 +726,8 @@
 
     styleBtn.addEventListener("click", () => {
       unlockAudio();
-      styleIndex = (styleIndex + 1) % styles.length;
-      playTone(240 + styleIndex * 70, 0.05, 0.025);
+      inkStyleIndex = (inkStyleIndex + 1) % inkStyles.length;
+      playTone(210 + inkStyleIndex * 42, 0.05, 0.025);
     });
 
     sizeBtn.addEventListener("click", () => {
