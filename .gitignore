@@ -6,6 +6,7 @@ Desktop.ini
 # Editor and IDE files
 .idea/
 .vscode/
+.playwright-cli/
 *.swp
 *.swo
 

@@ -1,0 +1,762 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>双手合体数字皮影戏</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='28' fill='%23050505'/%3E%3Cpath d='M20 42c10-3 10-18 18-20 7-2 11 5 8 12-3 8-13 13-26 8Z' fill='%23f4f0df'/%3E%3C/svg%3E">
+  <style>
+    :root {
+      color-scheme: dark;
+      --panel: rgba(18, 18, 22, 0.34);
+      --panel-border: rgba(255, 255, 255, 0.22);
+      --ink: rgba(0, 0, 0, 0.88);
+      --glow: rgba(255, 72, 95, 0.92);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #050505;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    body {
+      position: fixed;
+      inset: 0;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
+    }
+
+    #camera {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+      filter: saturate(0.92) contrast(1.04) brightness(0.94);
+      background: #050505;
+    }
+
+    #stage {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    .panel {
+      position: fixed;
+      top: max(18px, env(safe-area-inset-top));
+      right: max(18px, env(safe-area-inset-right));
+      z-index: 5;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      padding: 8px;
+      border: 1px solid var(--panel-border);
+      border-radius: 999px;
+      background: var(--panel);
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+      backdrop-filter: blur(18px) saturate(1.25);
+      -webkit-backdrop-filter: blur(18px) saturate(1.25);
+    }
+
+    .icon-button {
+      width: 40px;
+      height: 40px;
+      display: grid;
+      place-items: center;
+      border: 0;
+      border-radius: 999px;
+      color: rgba(255, 255, 255, 0.9);
+      background: rgba(255, 255, 255, 0.08);
+      cursor: pointer;
+      transition: transform 160ms ease, background 160ms ease, color 160ms ease;
+    }
+
+    .icon-button:hover {
+      transform: translateY(-1px);
+      color: #fff;
+      background: rgba(255, 255, 255, 0.16);
+    }
+
+    .icon-button:active {
+      transform: translateY(0) scale(0.96);
+    }
+
+    .icon-button svg {
+      width: 20px;
+      height: 20px;
+      stroke-width: 1.9;
+    }
+
+    .size-popover {
+      position: fixed;
+      top: 74px;
+      right: 20px;
+      z-index: 6;
+      width: 170px;
+      padding: 14px 14px 12px;
+      border: 1px solid var(--panel-border);
+      border-radius: 14px;
+      color: rgba(255, 255, 255, 0.86);
+      background: rgba(18, 18, 22, 0.38);
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.24);
+      backdrop-filter: blur(18px) saturate(1.25);
+      -webkit-backdrop-filter: blur(18px) saturate(1.25);
+      opacity: 0;
+      transform: translateY(-8px);
+      pointer-events: none;
+      transition: opacity 160ms ease, transform 160ms ease;
+    }
+
+    .size-popover.open {
+      opacity: 1;
+      transform: translateY(0);
+      pointer-events: auto;
+    }
+
+    .size-popover label {
+      display: block;
+      margin-bottom: 10px;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, 0.6);
+    }
+
+    .size-popover input {
+      width: 100%;
+      accent-color: #f4f0df;
+    }
+
+    .rec {
+      position: fixed;
+      top: max(20px, env(safe-area-inset-top));
+      left: max(22px, env(safe-area-inset-left));
+      z-index: 4;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      color: rgba(120, 0, 8, 0.96);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.16em;
+      text-shadow: 0 0 14px rgba(160, 0, 24, 0.95), 0 0 32px rgba(140, 0, 12, 0.82);
+      opacity: 0;
+      transition: opacity 200ms ease;
+    }
+
+    .rec.visible {
+      opacity: 1;
+      animation: breathe 1.15s ease-in-out infinite;
+    }
+
+    .rec-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #7c000a;
+      box-shadow: 0 0 16px rgba(160, 0, 24, 1), 0 0 34px rgba(140, 0, 12, 0.86);
+    }
+
+    .hint {
+      position: fixed;
+      left: 50%;
+      bottom: max(22px, env(safe-area-inset-bottom));
+      z-index: 4;
+      max-width: min(520px, calc(100vw - 40px));
+      padding: 10px 14px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 999px;
+      color: rgba(255, 255, 255, 0.7);
+      background: rgba(0, 0, 0, 0.24);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      font-size: 13px;
+      text-align: center;
+      transform: translateX(-50%);
+      transition: opacity 450ms ease;
+    }
+
+    .hint.hide {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    @keyframes breathe {
+      0%,
+      100% {
+        transform: scale(1);
+        filter: brightness(0.86);
+      }
+      50% {
+        transform: scale(1.035);
+        filter: brightness(1.35);
+      }
+    }
+  </style>
+</head>
+<body>
+  <video id="camera" autoplay playsinline muted></video>
+  <canvas id="stage"></canvas>
+
+  <div id="rec" class="rec" aria-hidden="true">
+    <span class="rec-dot"></span>
+    <span>REC</span>
+  </div>
+
+  <div id="hint" class="hint">允许摄像头后，用双手摆出手影；张嘴开始录制，再次张嘴或 3 秒后释放。</div>
+
+  <div class="panel" aria-label="控制面板">
+    <button id="styleBtn" class="icon-button" title="切换影子风格" aria-label="切换影子风格">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 22a7 7 0 0 0 7-7c0-5-7-13-7-13S5 10 5 15a7 7 0 0 0 7 7Z"></path>
+        <path d="M12 22a7 7 0 0 0 0-20"></path>
+      </svg>
+    </button>
+    <button id="sizeBtn" class="icon-button" title="影子大小" aria-label="影子大小">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M15 3h6v6"></path>
+        <path d="M9 21H3v-6"></path>
+        <path d="M21 3 14 10"></path>
+        <path d="M3 21 10 14"></path>
+      </svg>
+    </button>
+    <button id="clearBtn" class="icon-button" title="清空舞台" aria-label="清空舞台">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 6h18"></path>
+        <path d="M8 6V4h8v2"></path>
+        <path d="m19 6-1 14H6L5 6"></path>
+        <path d="M10 11v5"></path>
+        <path d="M14 11v5"></path>
+      </svg>
+    </button>
+  </div>
+
+  <div id="sizePopover" class="size-popover">
+    <label for="sizeRange">Shadow Size</label>
+    <input id="sizeRange" type="range" min="0.55" max="1.75" value="1" step="0.05">
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+  <script>
+    const video = document.getElementById("camera");
+    const canvas = document.getElementById("stage");
+    const ctx = canvas.getContext("2d", { alpha: true });
+    const recEl = document.getElementById("rec");
+    const hintEl = document.getElementById("hint");
+    const styleBtn = document.getElementById("styleBtn");
+    const sizeBtn = document.getElementById("sizeBtn");
+    const clearBtn = document.getElementById("clearBtn");
+    const sizePopover = document.getElementById("sizePopover");
+    const sizeRange = document.getElementById("sizeRange");
+
+    const FINGER_PATHS = [
+      [0, 1, 2, 3, 4],
+      [0, 5, 6, 7, 8],
+      [0, 9, 10, 11, 12],
+      [0, 13, 14, 15, 16],
+      [0, 17, 18, 19, 20]
+    ];
+    const PALM_PATH = [0, 1, 5, 9, 13, 17, 0];
+    const MAR_OPEN = 0.45;
+    const MAR_CLOSED = 0.2;
+    const MAX_RECORDING_MS = 3000;
+    const MAX_RECORDING_FRAMES = 180;
+    const styles = ["ink", "ember", "aurora"];
+
+    let width = 0;
+    let height = 0;
+    let dpr = 1;
+    let currentHands = [];
+    let latestFace = null;
+    let particles = [];
+    let recording = false;
+    let mouthLocked = false;
+    let recordingStartedAt = 0;
+    let recordingFrames = [];
+    let styleIndex = 0;
+    let shadowScale = 1;
+    let audioCtx = null;
+    let lastTimestamp = performance.now();
+    let lastProcessAt = 0;
+    let processing = false;
+
+    function resize() {
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      width = window.innerWidth;
+      height = window.innerHeight;
+      canvas.width = Math.floor(width * dpr);
+      canvas.height = Math.floor(height * dpr);
+      canvas.style.width = width + "px";
+      canvas.style.height = height + "px";
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    function screenPoint(landmark) {
+      return {
+        x: (1 - landmark.x) * width,
+        y: landmark.y * height
+      };
+    }
+
+    function distance(a, b) {
+      const dx = a.x - b.x;
+      const dy = a.y - b.y;
+      return Math.hypot(dx, dy);
+    }
+
+    function calculateMar(face) {
+      if (!face) return 0;
+      const leftCorner = screenPoint(face[78]);
+      const rightCorner = screenPoint(face[308]);
+      const topInner = screenPoint(face[13]);
+      const bottomInner = screenPoint(face[14]);
+      const mouthWidth = Math.max(distance(leftCorner, rightCorner), 1);
+      return distance(topInner, bottomInner) / mouthWidth;
+    }
+
+    function collectHandsForFrame(hands) {
+      const all = hands.flatMap(hand => hand.map(screenPoint));
+      if (!all.length) return null;
+
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      for (const point of all) {
+        minX = Math.min(minX, point.x);
+        minY = Math.min(minY, point.y);
+        maxX = Math.max(maxX, point.x);
+        maxY = Math.max(maxY, point.y);
+      }
+
+      const cx = (minX + maxX) / 2;
+      const cy = (minY + maxY) / 2;
+      const span = Math.max(maxX - minX, maxY - minY, 60);
+
+      return {
+        hands: hands.map(hand => hand.map(point => {
+          const p = screenPoint(point);
+          return {
+            x: (p.x - cx) / span,
+            y: (p.y - cy) / span
+          };
+        })),
+        span,
+        center: { x: cx, y: cy }
+      };
+    }
+
+    function makeLiveFrame(hands) {
+      const frame = collectHandsForFrame(hands);
+      if (!frame) return null;
+      frame.scale = frame.span * shadowScale;
+      return frame;
+    }
+
+    function drawFleshyHand(context, points, lineWidth, fillStyle) {
+      if (!points || points.length < 21) return;
+      context.save();
+      context.lineCap = "round";
+      context.lineJoin = "round";
+      context.strokeStyle = fillStyle;
+      context.fillStyle = fillStyle;
+
+      context.beginPath();
+      const first = points[PALM_PATH[0]];
+      context.moveTo(first.x, first.y);
+      for (let i = 1; i < PALM_PATH.length; i += 1) {
+        const p = points[PALM_PATH[i]];
+        context.lineTo(p.x, p.y);
+      }
+      context.closePath();
+      context.fill();
+
+      context.lineWidth = lineWidth;
+      for (const path of FINGER_PATHS) {
+        context.beginPath();
+        context.moveTo(points[path[0]].x, points[path[0]].y);
+        for (let i = 1; i < path.length; i += 1) {
+          const p = points[path[i]];
+          context.lineTo(p.x, p.y);
+        }
+        context.stroke();
+      }
+
+      const radius = lineWidth * 0.52;
+      for (const p of points) {
+        context.beginPath();
+        context.arc(p.x, p.y, radius, 0, Math.PI * 2);
+        context.fill();
+      }
+      context.restore();
+    }
+
+    function styleFill(context, style, radius, alpha = 1) {
+      if (style === "ink") {
+        return `rgba(0, 0, 0, ${0.86 * alpha})`;
+      }
+      if (style === "ember") {
+        const gradient = context.createRadialGradient(0, 0, radius * 0.15, 0, 0, radius);
+        gradient.addColorStop(0, `rgba(255, 126, 70, ${0.88 * alpha})`);
+        gradient.addColorStop(0.54, `rgba(70, 0, 12, ${0.84 * alpha})`);
+        gradient.addColorStop(1, `rgba(0, 0, 0, ${0.9 * alpha})`);
+        return gradient;
+      }
+      const gradient = context.createLinearGradient(-radius, -radius, radius, radius);
+      gradient.addColorStop(0, `rgba(0, 255, 214, ${0.78 * alpha})`);
+      gradient.addColorStop(0.5, `rgba(90, 35, 255, ${0.82 * alpha})`);
+      gradient.addColorStop(1, `rgba(255, 35, 126, ${0.76 * alpha})`);
+      return gradient;
+    }
+
+    function drawFrame(context, frame, options = {}) {
+      const {
+        x = frame.center.x,
+        y = frame.center.y,
+        scale = frame.scale || frame.span,
+        angle = 0,
+        style = styles[styleIndex],
+        alpha = 1,
+        live = false
+      } = options;
+      const radius = Math.max(scale * 0.7, 40);
+      const lineWidth = Math.max(28, Math.min(35, scale * 0.1));
+
+      context.save();
+      context.translate(x, y);
+      context.rotate(angle);
+      context.shadowColor = style === "ink" ? `rgba(0, 0, 0, ${0.65 * alpha})` : `rgba(255, 120, 180, ${0.42 * alpha})`;
+      context.shadowBlur = live ? 12 : 22;
+      context.globalCompositeOperation = style === "ink" ? "source-over" : "lighter";
+      const fill = styleFill(context, style, radius, alpha);
+
+      for (const hand of frame.hands) {
+        const points = hand.map(p => ({ x: p.x * scale, y: p.y * scale }));
+        drawFleshyHand(context, points, lineWidth, fill);
+      }
+      context.restore();
+    }
+
+    function createParticle() {
+      const frames = recordingFrames.slice(-MAX_RECORDING_FRAMES);
+      if (!frames.length) return;
+      const last = frames[frames.length - 1];
+      const radius = Math.max(44, last.span * shadowScale * 0.58);
+      const speed = 2.8 + Math.random() * 4.1;
+      const theta = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 0.9;
+      particles.push({
+        frames,
+        frameIndex: 0,
+        x: last.center.x,
+        y: last.center.y,
+        vx: Math.cos(theta) * speed + (Math.random() - 0.5) * 2,
+        vy: Math.sin(theta) * speed + (Math.random() - 0.5) * 2,
+        angle: (Math.random() - 0.5) * 0.7,
+        angularVelocity: (Math.random() - 0.5) * 0.055,
+        mass: radius * radius,
+        radius,
+        restitution: 0.82 + Math.random() * 0.12,
+        scale: last.span * shadowScale,
+        style: styles[styleIndex],
+        born: performance.now()
+      });
+      playReleaseSound(radius);
+    }
+
+    function startRecording() {
+      if (!currentHands.length) return;
+      recording = true;
+      recordingStartedAt = performance.now();
+      recordingFrames = [];
+      recEl.classList.add("visible");
+      hintEl.classList.add("hide");
+      playTone(170, 0.05, 0.04);
+    }
+
+    function stopRecording() {
+      if (!recording) return;
+      recording = false;
+      recEl.classList.remove("visible");
+      createParticle();
+      recordingFrames = [];
+      playTone(92, 0.09, 0.055);
+    }
+
+    function handleMouthState() {
+      const mar = calculateMar(latestFace);
+      if (mar > MAR_OPEN && !mouthLocked) {
+        mouthLocked = true;
+        if (recording) {
+          stopRecording();
+        } else {
+          startRecording();
+        }
+      }
+      if (mar < MAR_CLOSED) {
+        mouthLocked = false;
+      }
+      if (recording && performance.now() - recordingStartedAt > MAX_RECORDING_MS) {
+        stopRecording();
+      }
+    }
+
+    function captureRecordingFrame() {
+      if (!recording || !currentHands.length) return;
+      const frame = collectHandsForFrame(currentHands);
+      if (!frame) return;
+      recordingFrames.push(frame);
+      if (recordingFrames.length > MAX_RECORDING_FRAMES) {
+        recordingFrames.shift();
+      }
+    }
+
+    function updateParticles(dt) {
+      for (const p of particles) {
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.angle += p.angularVelocity * dt;
+        p.frameIndex = (p.frameIndex + 0.32 * dt) % p.frames.length;
+
+        if (p.x - p.radius < 0) {
+          p.x = p.radius;
+          p.vx = Math.abs(p.vx) * p.restitution;
+          p.angularVelocity += p.vy * 0.003;
+          playCollisionSound(p.radius);
+        } else if (p.x + p.radius > width) {
+          p.x = width - p.radius;
+          p.vx = -Math.abs(p.vx) * p.restitution;
+          p.angularVelocity += p.vy * 0.003;
+          playCollisionSound(p.radius);
+        }
+
+        if (p.y - p.radius < 0) {
+          p.y = p.radius;
+          p.vy = Math.abs(p.vy) * p.restitution;
+          p.angularVelocity -= p.vx * 0.003;
+          playCollisionSound(p.radius);
+        } else if (p.y + p.radius > height) {
+          p.y = height - p.radius;
+          p.vy = -Math.abs(p.vy) * p.restitution;
+          p.angularVelocity -= p.vx * 0.003;
+          playCollisionSound(p.radius);
+        }
+      }
+
+      for (let i = 0; i < particles.length; i += 1) {
+        for (let j = i + 1; j < particles.length; j += 1) {
+          resolveCollision(particles[i], particles[j]);
+        }
+      }
+    }
+
+    function resolveCollision(a, b) {
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const dist = Math.hypot(dx, dy) || 1;
+      const minDist = a.radius + b.radius;
+      if (dist >= minDist) return;
+
+      const nx = dx / dist;
+      const ny = dy / dist;
+      const overlap = (minDist - dist) * 0.5;
+      a.x -= nx * overlap;
+      a.y -= ny * overlap;
+      b.x += nx * overlap;
+      b.y += ny * overlap;
+
+      const tx = -ny;
+      const ty = nx;
+      const dpTanA = a.vx * tx + a.vy * ty;
+      const dpTanB = b.vx * tx + b.vy * ty;
+      const dpNormA = a.vx * nx + a.vy * ny;
+      const dpNormB = b.vx * nx + b.vy * ny;
+      const mA = (dpNormA * (a.mass - b.mass) + 2 * b.mass * dpNormB) / (a.mass + b.mass);
+      const mB = (dpNormB * (b.mass - a.mass) + 2 * a.mass * dpNormA) / (a.mass + b.mass);
+      const bounce = Math.min(a.restitution, b.restitution);
+
+      a.vx = tx * dpTanA + nx * mA * bounce;
+      a.vy = ty * dpTanA + ny * mA * bounce;
+      b.vx = tx * dpTanB + nx * mB * bounce;
+      b.vy = ty * dpTanB + ny * mB * bounce;
+      a.angularVelocity += (dpTanB - dpTanA) * 0.006;
+      b.angularVelocity += (dpTanA - dpTanB) * 0.006;
+      playCollisionSound((a.radius + b.radius) * 0.5);
+    }
+
+    function render(now) {
+      const dt = Math.min((now - lastTimestamp) / 16.67, 2.2);
+      lastTimestamp = now;
+      ctx.clearRect(0, 0, width, height);
+
+      updateParticles(dt);
+
+      for (const p of particles) {
+        const frame = p.frames[Math.floor(p.frameIndex) % p.frames.length];
+        drawFrame(ctx, frame, {
+          x: p.x,
+          y: p.y,
+          scale: p.scale,
+          angle: p.angle,
+          style: p.style,
+          alpha: 0.88
+        });
+      }
+
+      const liveFrame = makeLiveFrame(currentHands);
+      if (liveFrame) {
+        drawFrame(ctx, liveFrame, {
+          style: recording ? styles[styleIndex] : "ink",
+          alpha: recording ? 0.54 : 0.24,
+          live: true
+        });
+      }
+
+      captureRecordingFrame();
+      handleMouthState();
+      requestAnimationFrame(render);
+    }
+
+    function unlockAudio() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtx.state === "suspended") {
+        audioCtx.resume();
+      }
+    }
+
+    function playTone(freq, duration, volume) {
+      if (!audioCtx) return;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+      gain.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(volume, audioCtx.currentTime + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + duration + 0.02);
+    }
+
+    function playReleaseSound(radius) {
+      playTone(Math.max(60, 220 - radius * 0.42), 0.16, 0.06);
+    }
+
+    let lastCollisionSound = 0;
+    function playCollisionSound(radius) {
+      const now = performance.now();
+      if (now - lastCollisionSound < 90) return;
+      lastCollisionSound = now;
+      playTone(Math.max(70, 260 - radius * 0.5), 0.045, 0.025);
+    }
+
+    async function setupMediaPipe() {
+      const hands = new Hands({
+        locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+      });
+      hands.setOptions({
+        maxNumHands: 2,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.64,
+        minTrackingConfidence: 0.62
+      });
+      hands.onResults(results => {
+        currentHands = results.multiHandLandmarks || [];
+      });
+
+      const faceMesh = new FaceMesh({
+        locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+      });
+      faceMesh.setOptions({
+        maxNumFaces: 1,
+        refineLandmarks: true,
+        minDetectionConfidence: 0.58,
+        minTrackingConfidence: 0.58
+      });
+      faceMesh.onResults(results => {
+        latestFace = (results.multiFaceLandmarks && results.multiFaceLandmarks[0]) || null;
+      });
+
+      await startCamera();
+      async function process(now) {
+        if (!processing && video.readyState >= 2 && now - lastProcessAt > 33) {
+          processing = true;
+          lastProcessAt = now;
+          try {
+            await hands.send({ image: video });
+            await faceMesh.send({ image: video });
+          } catch (error) {
+            console.error(error);
+          } finally {
+            processing = false;
+          }
+        }
+        requestAnimationFrame(process);
+      }
+      requestAnimationFrame(process);
+    }
+
+    async function startCamera() {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: "user",
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        },
+        audio: false
+      });
+      video.srcObject = stream;
+      await video.play();
+      setTimeout(() => hintEl.classList.add("hide"), 5200);
+    }
+
+    styleBtn.addEventListener("click", () => {
+      unlockAudio();
+      styleIndex = (styleIndex + 1) % styles.length;
+      playTone(240 + styleIndex * 70, 0.05, 0.025);
+    });
+
+    sizeBtn.addEventListener("click", () => {
+      unlockAudio();
+      sizePopover.classList.toggle("open");
+    });
+
+    clearBtn.addEventListener("click", () => {
+      unlockAudio();
+      particles = [];
+      playTone(120, 0.07, 0.025);
+    });
+
+    sizeRange.addEventListener("input", event => {
+      shadowScale = Number(event.target.value);
+    });
+
+    window.addEventListener("pointerdown", unlockAudio, { once: true });
+    window.addEventListener("resize", resize);
+
+    resize();
+    requestAnimationFrame(render);
+    setupMediaPipe().catch(error => {
+      console.error(error);
+      hintEl.textContent = "摄像头或模型加载失败，请确认浏览器权限与网络连接。";
+      hintEl.classList.remove("hide");
+    });
+  </script>
+</body>
+</html>
