@@ -195,6 +195,23 @@
       pointer-events: none;
     }
 
+    .version {
+      position: fixed;
+      left: max(14px, env(safe-area-inset-left));
+      bottom: max(12px, env(safe-area-inset-bottom));
+      z-index: 4;
+      padding: 4px 7px;
+      border-radius: 999px;
+      color: rgba(255, 255, 255, 0.46);
+      background: rgba(0, 0, 0, 0.18);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      font-size: 10px;
+      line-height: 1;
+      letter-spacing: 0.08em;
+      pointer-events: none;
+    }
+
     @keyframes breathe {
       0%,
       100% {
@@ -218,6 +235,7 @@
   </div>
 
   <div id="hint" class="hint">允许摄像头后，用双手摆出手影；张嘴开始录制，再次张嘴或 3 秒后释放。</div>
+  <div class="version" aria-label="版本号">v2026.06.19.7</div>
 
   <div class="panel" aria-label="控制面板">
     <button id="styleBtn" class="icon-button" title="切换黑墨质感" aria-label="切换黑墨质感">
@@ -277,9 +295,9 @@
     const MAX_RECORDING_MS = 3000;
     const MAX_RECORDING_FRAMES = 180;
     const inkStyles = [
-      { name: "softInk", core: 0.86, edge: 0.18, blur: 14, halo: 0.1 },
-      { name: "deepInk", core: 0.94, edge: 0.22, blur: 10, halo: 0.08 },
-      { name: "charcoal", core: 0.9, edge: 0.14, blur: 6, halo: 0.06 }
+      { name: "softInk", core: 0.9, edge: 0.13, blur: 6, halo: 0.04 },
+      { name: "deepInk", core: 0.96, edge: 0.15, blur: 5, halo: 0.035 },
+      { name: "charcoal", core: 0.93, edge: 0.11, blur: 3, halo: 0.025 }
     ];
 
     let width = 0;
@@ -372,75 +390,181 @@
       return frame;
     }
 
-    function drawFingerSilhouette(context, points, path, widths, fillStyle) {
-      context.save();
-      context.lineCap = "round";
-      context.lineJoin = "round";
-      context.strokeStyle = fillStyle;
-      context.fillStyle = fillStyle;
+    function lerpPoint(a, b, t) {
+      return {
+        x: a.x + (b.x - a.x) * t,
+        y: a.y + (b.y - a.y) * t
+      };
+    }
 
-      for (let i = 0; i < path.length - 1; i += 1) {
-        const from = points[path[i]];
-        const to = points[path[i + 1]];
-        context.lineWidth = widths[i];
-        context.beginPath();
-        context.moveTo(from.x, from.y);
-        context.lineTo(to.x, to.y);
-        context.stroke();
+    function addPoint(a, b) {
+      return { x: a.x + b.x, y: a.y + b.y };
+    }
+
+    function scalePoint(point, value) {
+      return { x: point.x * value, y: point.y * value };
+    }
+
+    function normalizedVector(a, b) {
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const length = Math.hypot(dx, dy) || 1;
+      return { x: dx / length, y: dy / length };
+    }
+
+    function normalVector(direction) {
+      return { x: -direction.y, y: direction.x };
+    }
+
+    function jointNormal(points, index, previousIndex, nextIndex) {
+      const previous = points[previousIndex];
+      const current = points[index];
+      const next = points[nextIndex];
+      const before = normalizedVector(previous, current);
+      const after = normalizedVector(current, next);
+      const direction = normalizedVector({ x: 0, y: 0 }, addPoint(before, after));
+      return normalVector(direction);
+    }
+
+    function drawSmoothClosedPath(context, outline) {
+      if (outline.length < 3) return;
+      context.beginPath();
+      context.moveTo(outline[0].x, outline[0].y);
+      for (let i = 0; i < outline.length; i += 1) {
+        const current = outline[i];
+        const next = outline[(i + 1) % outline.length];
+        const mid = lerpPoint(current, next, 0.5);
+        context.quadraticCurveTo(current.x, current.y, mid.x, mid.y);
+      }
+      context.closePath();
+      context.fill();
+    }
+
+    function appendSmoothClosedPath(path, outline) {
+      if (outline.length < 3) return;
+      path.moveTo(outline[0].x, outline[0].y);
+      for (let i = 0; i < outline.length; i += 1) {
+        const current = outline[i];
+        const next = outline[(i + 1) % outline.length];
+        const mid = lerpPoint(current, next, 0.5);
+        path.quadraticCurveTo(current.x, current.y, mid.x, mid.y);
+      }
+      path.closePath();
+    }
+
+    function appendCircle(path, point, radius) {
+      path.moveTo(point.x + radius, point.y);
+      path.arc(point.x, point.y, radius, 0, Math.PI * 2);
+      path.closePath();
+    }
+
+    function buildFingerOutline(points, indices, radii) {
+      const centers = indices.map(index => points[index]);
+      const tipDirection = normalizedVector(centers[centers.length - 2], centers[centers.length - 1]);
+      centers[centers.length - 1] = addPoint(centers[centers.length - 1], scalePoint(tipDirection, radii[radii.length - 1] * 0.95));
+      const left = [];
+      const right = [];
+
+      for (let i = 0; i < centers.length; i += 1) {
+        const previousIndex = Math.max(0, i - 1);
+        const nextIndex = Math.min(centers.length - 1, i + 1);
+        const direction = normalizedVector(centers[previousIndex], centers[nextIndex]);
+        const normal = normalVector(direction);
+        const radius = radii[i];
+        left.push(addPoint(centers[i], scalePoint(normal, radius)));
+        right.push(addPoint(centers[i], scalePoint(normal, -radius)));
       }
 
-      for (let i = 1; i < path.length; i += 1) {
-        const p = points[path[i]];
-        const radius = widths[Math.max(0, i - 1)] * 0.5;
-        context.beginPath();
-        context.arc(p.x, p.y, radius, 0, Math.PI * 2);
-        context.fill();
-      }
-      context.restore();
+      return left.concat(right.reverse());
+    }
+
+    function appendFingerSilhouette(shape, points, path, widths) {
+      const outline = buildFingerOutline(points, path, widths.map(width => width * 0.5));
+      appendSmoothClosedPath(shape, outline);
+      const tip = points[path[path.length - 1]];
+      const beforeTip = points[path[path.length - 2]];
+      const tipDirection = normalizedVector(beforeTip, tip);
+      const extendedTip = addPoint(tip, scalePoint(tipDirection, widths[widths.length - 1] * 0.48));
+      appendCircle(shape, extendedTip, widths[widths.length - 1] * 0.58);
+    }
+
+    function appendBridge(shape, points, fromIndex, toIndex, width) {
+      const from = points[fromIndex];
+      const to = points[toIndex];
+      const direction = normalizedVector(from, to);
+      const normal = normalVector(direction);
+      const radius = width * 0.5;
+      const outline = [
+        addPoint(from, scalePoint(normal, radius)),
+        addPoint(to, scalePoint(normal, radius)),
+        addPoint(to, scalePoint(normal, -radius)),
+        addPoint(from, scalePoint(normal, -radius))
+      ];
+      appendSmoothClosedPath(shape, outline);
     }
 
     function drawFleshyHand(context, points, lineWidth, fillStyle) {
       if (!points || points.length < 21) return;
-      const palmWidth = Math.max(lineWidth * 1.08, distance(points[0], points[9]) * 0.22);
-      const fingerBase = lineWidth * 0.96;
-      const fingerTip = lineWidth * 0.58;
+      const palmWidth = Math.max(lineWidth * 2.65, distance(points[0], points[9]) * 0.42);
+      const fingerBase = lineWidth * 1.98;
+      const fingerMid = lineWidth * 1.54;
+      const fingerNearTip = lineWidth * 1.16;
+      const fingerTip = lineWidth * 0.92;
+      const wristToMiddle = normalizedVector(points[0], points[9]);
+      const palmNormal = normalVector(wristToMiddle);
+      const wristBack = addPoint(points[0], scalePoint(wristToMiddle, -lineWidth * 0.78));
+      const wristLeft = addPoint(wristBack, scalePoint(palmNormal, palmWidth * 0.72));
+      const wristRight = addPoint(wristBack, scalePoint(palmNormal, -palmWidth * 0.72));
+      const thumbWeb = lerpPoint(points[1], points[5], 0.52);
+      const webPocket = addPoint(thumbWeb, scalePoint(wristToMiddle, -lineWidth * 0.48));
+      const indexKnuckle = addPoint(points[5], scalePoint(jointNormal(points, 5, 0, 6), lineWidth * 0.58));
+      const pinkyKnuckle = addPoint(points[17], scalePoint(jointNormal(points, 17, 0, 18), -lineWidth * 0.62));
+      const shape = new Path2D();
 
-      context.save();
-      context.lineCap = "round";
-      context.lineJoin = "round";
-      context.strokeStyle = fillStyle;
-      context.fillStyle = fillStyle;
-
-      context.beginPath();
-      context.moveTo(points[0].x, points[0].y);
-      context.quadraticCurveTo(points[1].x, points[1].y, points[5].x, points[5].y);
-      context.quadraticCurveTo(points[9].x, points[9].y, points[13].x, points[13].y);
-      context.quadraticCurveTo(points[17].x, points[17].y, points[0].x, points[0].y);
-      context.closePath();
-      context.fill();
+      shape.moveTo(wristLeft.x, wristLeft.y);
+      shape.quadraticCurveTo(points[1].x, points[1].y, webPocket.x, webPocket.y);
+      shape.quadraticCurveTo(points[5].x, points[5].y, indexKnuckle.x, indexKnuckle.y);
+      shape.quadraticCurveTo(points[9].x, points[9].y, points[13].x, points[13].y);
+      shape.quadraticCurveTo(points[17].x, points[17].y, pinkyKnuckle.x, pinkyKnuckle.y);
+      shape.quadraticCurveTo(wristRight.x, wristRight.y, wristLeft.x, wristLeft.y);
+      shape.closePath();
 
       for (const index of [0, 1, 5, 9, 13, 17]) {
-        const p = points[index];
-        context.beginPath();
-        context.arc(p.x, p.y, palmWidth * 0.54, 0, Math.PI * 2);
-        context.fill();
+        appendCircle(shape, points[index], palmWidth * (index === 0 ? 0.46 : 0.31));
       }
 
-      drawFingerSilhouette(context, points, FINGER_PATHS[0], [
+      for (const bridge of [[1, 2], [5, 6], [9, 10], [13, 14], [17, 18]]) {
+        appendBridge(shape, points, bridge[0], bridge[1], lineWidth * 1.92);
+      }
+
+      for (const bridge of [[5, 9], [9, 13], [13, 17], [1, 5], [0, 5], [0, 9], [0, 13], [0, 17]]) {
+        appendBridge(shape, points, bridge[0], bridge[1], lineWidth * 1.62);
+      }
+
+      appendFingerSilhouette(shape, points, [1, 2, 3, 4], [
+        lineWidth * 1.45,
+        lineWidth * 1.26,
         lineWidth * 1.02,
-        lineWidth * 0.88,
-        lineWidth * 0.76,
-        fingerTip
-      ], fillStyle);
+        fingerTip * 1.04
+      ]);
 
       for (let i = 1; i < FINGER_PATHS.length; i += 1) {
-        drawFingerSilhouette(context, points, FINGER_PATHS[i], [
+        appendFingerSilhouette(shape, points, FINGER_PATHS[i].slice(1), [
           fingerBase,
-          lineWidth * 0.84,
-          lineWidth * 0.7,
+          fingerMid,
+          fingerNearTip,
           fingerTip
-        ], fillStyle);
+        ]);
       }
+
+      context.save();
+      context.fillStyle = fillStyle;
+      context.strokeStyle = fillStyle;
+      context.lineCap = "round";
+      context.lineJoin = "round";
+      context.lineWidth = lineWidth * 1.15;
+      context.fill(shape);
+      context.stroke(shape);
       context.restore();
     }
 
@@ -458,7 +582,7 @@
         live = false
       } = options;
       const radius = Math.max(scale * 0.7, 40);
-      const lineWidth = Math.max(24, Math.min(33, scale * 0.092));
+      const lineWidth = Math.max(31, Math.min(48, scale * 0.14));
       const ink = inkStyles[inkStyleIndex];
 
       context.save();
@@ -468,11 +592,11 @@
 
       context.save();
       context.shadowColor = inkFill(alpha, ink.edge);
-      context.shadowBlur = ink.blur + (live ? 0 : 5);
-      context.globalAlpha = Math.min(alpha * 0.86, 1);
+      context.shadowBlur = ink.blur + (live ? 0 : 2);
+      context.globalAlpha = Math.min(alpha * 0.62, 1);
       for (const hand of frame.hands) {
         const points = hand.map(p => ({ x: p.x * scale, y: p.y * scale }));
-        drawFleshyHand(context, points, lineWidth + 4, inkFill(alpha, ink.edge));
+        drawFleshyHand(context, points, lineWidth * 0.94, inkFill(alpha, ink.edge));
       }
       context.restore();
 
@@ -481,7 +605,7 @@
       context.shadowBlur = live ? ink.blur * 0.5 : ink.blur;
       for (const hand of frame.hands) {
         const points = hand.map(p => ({ x: p.x * scale, y: p.y * scale }));
-        drawFleshyHand(context, points, lineWidth, inkFill(alpha, ink.core));
+        drawFleshyHand(context, points, lineWidth * 0.72, inkFill(alpha, ink.core));
       }
       context.restore();
       context.restore();
